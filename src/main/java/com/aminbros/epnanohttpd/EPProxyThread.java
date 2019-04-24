@@ -370,15 +370,15 @@ class EPProxyThread implements Runnable {
         }
       }
       if (mCacheMD != null && revalidate) {
-        mActiveConn = EPProxyThread.httprequesthead(mUrl, mHeaders);
+        mActiveConn = httprequesthead(mUrl, mHeaders);
         allHeaders = mActiveConn.getHeaderFields(); 
         String etag = mActiveConn.getHeaderField("ETag");
         if (etag == null) {
           // treat Last-Modified as ETag
           etag = mActiveConn.getHeaderField("Last-Modified");
         }
-        if ((mActiveConn.getResponseCode() != 200 &&
-             mActiveConn.getResponseCode() != 206) || etag == null ||
+        if (!(mActiveConn.getResponseCode() == 200 ||
+              mActiveConn.getResponseCode() == 206) || etag == null ||
             !mCacheMD.getETag().equals(etag)) {
           mCacheMD.deleteonend = true;
           cmanager.unsubscribe(mCacheMD, this);
@@ -414,7 +414,8 @@ class EPProxyThread implements Runnable {
         }
         if (mCacheMD != null) {
           long cachemd_csize = mCacheMD.getSize();
-          if (mContentSize == -1 ||
+          if (!(mActiveConn.getResponseCode() == 200 ||
+                mActiveConn.getResponseCode() == 206) || mContentSize == -1 ||
               (rangedata != null && rangedata[2] != cachemd_csize) ||
               (rangedata == null && mContentSize != cachemd_csize))  {
             mCacheMD.deleteonend = true;
@@ -461,7 +462,7 @@ class EPProxyThread implements Runnable {
         allHeaders.put("content-length", tmparr);
       }
       for (Map.Entry<String, List<String>> entry : allHeaders.entrySet()) {
-        if (entry.getValue().size() > 0) {
+        if (entry.getKey() != null && entry.getValue().size() > 0) {
           headers.put(entry.getKey(), entry.getValue().get(0));
         }
       }

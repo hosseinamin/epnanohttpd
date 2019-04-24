@@ -71,6 +71,8 @@ public class EPNanoHTTPD extends NanoHTTPD {
       headers.remove("host");
       headers.remove("http-client-ip");
       headers.remove("remote-addr");
+      headers.remove("connection");
+      headers.remove("accept-encoding");
       String explicit_url = parms.get("__u__");
       URL url;
       if (path == "" && explicit_url != null) {

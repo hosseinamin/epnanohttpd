@@ -35,6 +35,7 @@ import java.io.IOException;
 
 import java.net.URL;
 import java.net.HttpURLConnection;
+import java.net.InetAddress;
 
 import com.aminbros.util.Log;
 // import android.util.Log;
@@ -356,6 +357,17 @@ class EPProxyThread implements Runnable {
           }
         }
         revalidate = !(range[0] > range[1]);
+      }
+      // check for network connectivity, for skipping revalidation
+      if (revalidate) {
+        int timeout = 2000;
+        String hostname = mUrl.getHost();
+        InetAddress[] addresses = InetAddress.getAllByName(hostname);
+        for (InetAddress address : addresses) {
+          if (!address.isReachable(timeout)) {
+            revalidate = false;
+          }
+        }
       }
       if (mCacheMD != null && revalidate) {
         mActiveConn = EPProxyThread.httprequesthead(mUrl, mHeaders);

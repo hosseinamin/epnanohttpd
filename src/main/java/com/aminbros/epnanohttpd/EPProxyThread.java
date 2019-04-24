@@ -58,6 +58,7 @@ class EPProxyThread implements Runnable {
   protected HttpURLConnection mActiveConn;
   protected long []mRange;
   protected long mContentSize;
+  protected long mFileSize;
   protected CacheMD mCacheMD;
   protected InputStream mInStream; // POST/PUT stream
   protected long mSkipValidationTimeout;
@@ -79,8 +80,8 @@ class EPProxyThread implements Runnable {
         throw new RuntimeException("Unexpected Range header, Prefixed with `bytes=` is accepted`");
       }
       String []rangeparts = rangestr.split("-");
+      mRange = new long[2];
       if (rangeparts.length == 2) {
-        mRange = new long[2];
         mRange[0] = Long.valueOf(rangeparts[0]);
         mRange[1] = Long.valueOf(rangeparts[1]);
       } else if (rangeparts.length == 1) {
@@ -98,8 +99,8 @@ class EPProxyThread implements Runnable {
   public void run () {
     CacheMDManager cmanager = CacheMDManager.getInstance();
     long start = mRange == null ? 0 : mRange[0];
-    long finalend = mRange == null && mRange[1] == -1 ?
-      mContentSize - 1 : mRange[1];
+    long finalend = mRange == null || mRange[1] == -1 ?
+      mFileSize - 1 : mRange[1];
     FileOutputStream fileOutStream = null;
     Chunk chunk = null;
     long writesize = 0;
@@ -329,7 +330,7 @@ class EPProxyThread implements Runnable {
       mStarted = true;
       CacheMDManager cmanager = CacheMDManager.getInstance();
       boolean keepActiveConn = false;
-      if (mMethod == "GET" && mCacheDir != null) {
+      if (mMethod.equals("GET") && mCacheDir != null) {
         mCacheMD = cmanager.subscribeIfExists(mCacheDir.getAbsolutePath(), this);
       }
       Map<String,List<String>> allHeaders = null;
@@ -337,7 +338,8 @@ class EPProxyThread implements Runnable {
       boolean revalidate = mCacheMD == null || mCacheMD.mustRevalidate ||
         (new Date().getTime()/1000) > mCacheMD.lastUpdate + mSkipValidationTimeout ||
         mCacheMD.headers == null;
-      if (!revalidate) {
+      boolean hasall = false;
+      if (mCacheMD != null && mCacheMD.headers != null) {
         // check, mCacheMD has requested range
         long []range = new long[2];
         if (mRange == null) {
@@ -356,10 +358,15 @@ class EPProxyThread implements Runnable {
             }
           }
         }
-        revalidate = !(range[0] > range[1]);
+        hasall = (range[0] > range[1]);
+        if (hasall && revalidate && !mCacheMD.mustRevalidate) {
+          revalidate = false;
+        } else if (!hasall && !revalidate) {
+          revalidate = true;
+        }
       }
       // check for network connectivity, for skipping revalidation
-      if (revalidate && mCacheMD != null && mCacheMD.headers != null) {
+      if (revalidate && hasall) {
         int timeout = 2000;
         String hostname = mUrl.getHost();
         InetAddress[] addresses = InetAddress.getAllByName(hostname);
@@ -408,9 +415,9 @@ class EPProxyThread implements Runnable {
           etag = mActiveConn.getHeaderField("Last-Modified");
         }
         long []rangedata = _getContentRangeData(mActiveConn.getHeaderField("Content-Range"));
+        mFileSize = rangedata != null ? rangedata[2] : mContentSize;
         if (mCacheMD == null && mContentSize != -1 && etag != null) {
-          long filesize = rangedata != null ? rangedata[2] : mContentSize;
-          mCacheMD = cmanager.subscribeIfNotExists(mCacheDir.getAbsolutePath(), etag, filesize, this);
+          mCacheMD = cmanager.subscribeIfNotExists(mCacheDir.getAbsolutePath(), etag, mFileSize, this);
         }
         if (mCacheMD != null) {
           long cachemd_csize = mCacheMD.getSize();
@@ -444,18 +451,18 @@ class EPProxyThread implements Runnable {
         }
       } else {
         allHeaders = new HashMap(mCacheMD.headers);
-        long filesize = mCacheMD.getSize();
+        mFileSize = mCacheMD.getSize();
         List<String> tmparr;
         allHeaders.remove("content-range");
         allHeaders.remove("content-length");
         if (mRange != null) {
-          long end = mRange[1] < 0 ? filesize - 1 : mRange[1];
+          long end = mRange[1] < 0 ? mFileSize - 1 : mRange[1];
           mContentSize = end - mRange[0] + 1;
           tmparr = new ArrayList();
-          tmparr.add("bytes " + mRange[0] + "-" + end + "/" + filesize);
+          tmparr.add("bytes " + mRange[0] + "-" + end + "/" + mFileSize);
           allHeaders.put("content-range", tmparr);
         } else {
-          mContentSize = filesize;
+          mContentSize = mFileSize;
         }
         tmparr = new ArrayList();
         tmparr.add(String.valueOf(mContentSize));

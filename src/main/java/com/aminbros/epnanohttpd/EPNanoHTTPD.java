@@ -64,7 +64,7 @@ public class EPNanoHTTPD extends NanoHTTPD {
       if (!path.startsWith("/")) {
         path = "/" + path;
       }
-      if (path == "/") {
+      if (path.equals("/")) {
         path = ""; // special case, no change to mProxyUrl
       }
       // remove, unwanted headers
@@ -75,7 +75,7 @@ public class EPNanoHTTPD extends NanoHTTPD {
       headers.remove("accept-encoding");
       String explicit_url = parms.get("__u__");
       URL url;
-      if (path == "" && explicit_url != null) {
+      if (path.equals("") && explicit_url != null) {
         url = new URL(explicit_url);
       } else {
         if (mProxyUrl == null) {

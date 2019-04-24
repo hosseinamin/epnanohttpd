@@ -45,11 +45,8 @@ public class EPNanoHTTPD extends NanoHTTPD {
         throw new IOException("Could not create cachedir directory at " + mCacheDir.getAbsolutePath());
       }
     }
-    if (!(mProxyUrl.startsWith("http://") || mProxyUrl.startsWith("https://"))) {
-      throw new RuntimeException("Unexpected proxyurl (http/https are accepted) given: " + mProxyUrl);
-    }
     // strip slash at end
-    if (mProxyUrl.endsWith("/")) {
+    if (mProxyUrl != null && mProxyUrl.endsWith("/")) {
       mProxyUrl = mProxyUrl.substring(0, mProxyUrl.length()-1);
     }
     // start(NanoHTTPD.SOCKET_READ_TIMEOUT, true);
@@ -70,8 +67,21 @@ public class EPNanoHTTPD extends NanoHTTPD {
       if (path == "/") {
         path = ""; // special case, no change to mProxyUrl
       }
-      String query = encodeParms(parms);
-      URL url = new URL(mProxyUrl + path + (query.length() == 0 ? "" : "?" + query));
+      // remove, unwanted headers
+      headers.remove("host");
+      headers.remove("http-client-ip");
+      headers.remove("remote-addr");
+      String explicit_url = parms.get("__u__");
+      URL url;
+      if (path == "" && explicit_url != null) {
+        url = new URL(explicit_url);
+      } else {
+        if (mProxyUrl == null) {
+          return NanoHTTPD.newFixedLengthResponse(Status.NOT_FOUND, NanoHTTPD.MIME_PLAINTEXT, "Not Found!");
+        }
+        String query = encodeParms(parms);
+        url = new URL(mProxyUrl + path + (query.length() == 0 ? "" : "?" + query));
+      }
       InputStream instream = session.getInputStream();
       EPProxyThread thread = new EPProxyThread(method, url, headers, instream, mCacheDir);
       return thread.start();

@@ -359,7 +359,7 @@ class EPProxyThread implements Runnable {
         revalidate = !(range[0] > range[1]);
       }
       // check for network connectivity, for skipping revalidation
-      if (revalidate) {
+      if (revalidate && mCacheMD != null && mCacheMD.headers != null) {
         int timeout = 2000;
         String hostname = mUrl.getHost();
         InetAddress[] addresses = InetAddress.getAllByName(hostname);

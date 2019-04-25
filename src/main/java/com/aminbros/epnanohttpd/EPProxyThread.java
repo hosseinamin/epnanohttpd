@@ -38,7 +38,6 @@ import java.net.HttpURLConnection;
 import java.net.InetAddress;
 
 import com.aminbros.util.Log;
-// import android.util.Log;
 
 import com.aminbros.epnanohttpd.CacheMD.Chunk;
 
@@ -162,6 +161,7 @@ class EPProxyThread implements Runnable {
               while ((size = fileInStream.read(buffer)) > 0) {
                 size = Math.min(size, (int)(end - start + 1));
                 mOutStreamPipe.write(buffer, 0, size);
+                mOutStreamPipe.flush();
                 start += size;
                 writesize += size;
                 if (start > end) {
@@ -218,6 +218,7 @@ class EPProxyThread implements Runnable {
             fileOutStream.write(buffer, 0, size);
           }
           mOutStreamPipe.write(buffer, 0, size);
+          mOutStreamPipe.flush();
           start += size;
           writesize += size;
           if (start > end) {
@@ -492,7 +493,7 @@ class EPProxyThread implements Runnable {
         if (!keepActiveConn) {
           mActiveConn = null;
         }
-        PipedInputStream instream = new PipedInputStream();
+        PipedInputStream instream = new PipedInputStream(BUFFSIZE);
         mOutStreamPipe = new PipedOutputStream(instream);
         mThread = new Thread(this, mThreadName);
         mThread.start();

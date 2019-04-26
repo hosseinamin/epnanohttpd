@@ -9,14 +9,14 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.ArrayList;
 import java.net.URLEncoder;
-import java.io.PipedOutputStream;
-import java.io.PipedInputStream;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.nio.charset.StandardCharsets;
 import java.util.regex.Pattern;
 import java.util.regex.Matcher;
 import java.util.Date;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.Arrays;
 
 import fi.iki.elonen.NanoHTTPD;
 import fi.iki.elonen.NanoHTTPD.Response;
@@ -38,6 +38,7 @@ import java.net.HttpURLConnection;
 import java.net.InetAddress;
 
 import com.aminbros.util.Log;
+import com.aminbros.util.BlockingInputStream;
 
 import com.aminbros.epnanohttpd.CacheMD.Chunk;
 
@@ -45,6 +46,7 @@ class EPProxyThread implements Runnable {
   public final static String TAG = "EPProxyThread";
   public final static int BUFFSIZE = 1024 * 8;
   public final static long SKIP_VALIDATION_TIMEOUT = 5 * 60 * 60;
+  public final static long DEAD_QUEUE_TIMEOUT = 20 * 1000;
 
   protected boolean mStarted;
   protected Thread mThread;
@@ -53,7 +55,7 @@ class EPProxyThread implements Runnable {
   protected URL mUrl;
   protected Map<String, String> mHeaders;
   protected File mCacheDir;
-  protected PipedOutputStream mOutStreamPipe;
+  protected ArrayBlockingQueue mOutputBlockingQueue;
   protected HttpURLConnection mActiveConn;
   protected long []mRange;
   protected long mContentSize;
@@ -160,8 +162,8 @@ class EPProxyThread implements Runnable {
               int size;
               while ((size = fileInStream.read(buffer)) > 0) {
                 size = Math.min(size, (int)(end - start + 1));
-                mOutStreamPipe.write(buffer, 0, size);
-                mOutStreamPipe.flush();
+                byte[] data = Arrays.copyOfRange(buffer, 0, size);
+                addToOutputQueue(data);
                 start += size;
                 writesize += size;
                 if (start > end) {
@@ -217,8 +219,8 @@ class EPProxyThread implements Runnable {
           if (fileOutStream != null) {
             fileOutStream.write(buffer, 0, size);
           }
-          mOutStreamPipe.write(buffer, 0, size);
-          mOutStreamPipe.flush();
+          byte[] data = Arrays.copyOfRange(buffer, 0, size);
+          addToOutputQueue(data);
           start += size;
           writesize += size;
           if (start > end) {
@@ -237,6 +239,9 @@ class EPProxyThread implements Runnable {
         }
         conn = null;
       }
+    } catch (DeadBlockingQueueException e) {
+      // thread interrupted
+      Log.w(TAG, "Output connection timeout, DeadBlockingQueueException");
     } catch (InterruptedException e) {
       // thread interrupted
       Log.w(TAG, "InterruptedExc at pipe thread", e);
@@ -265,11 +270,23 @@ class EPProxyThread implements Runnable {
         cmanager.unsubscribe(mCacheMD, this);
       }
       try {
-        mOutStreamPipe.close();
-      } catch (IOException e) {
+        // close the queue
+        addToOutputQueue(new byte[0]);
+      } catch (Exception e) {
         // pass
       }
     }
+  }
+
+  public void addToOutputQueue (byte[] data) throws DeadBlockingQueueException, InterruptedException {
+    long waitingTime = new Date().getTime();
+    while (mOutputBlockingQueue.remainingCapacity() == 0) {
+      Thread.sleep(100);
+      if (new Date().getTime() > waitingTime + DEAD_QUEUE_TIMEOUT) {
+        throw new DeadBlockingQueueException();
+      }
+    }
+    mOutputBlockingQueue.put(data);
   }
   
   public static HttpURLConnection httprequesthead (URL url, Map<String, String> headers) throws IOException {
@@ -493,8 +510,8 @@ class EPProxyThread implements Runnable {
         if (!keepActiveConn) {
           mActiveConn = null;
         }
-        PipedInputStream instream = new PipedInputStream(BUFFSIZE);
-        mOutStreamPipe = new PipedOutputStream(instream);
+        mOutputBlockingQueue = new ArrayBlockingQueue(50);
+        BlockingInputStream instream = new BlockingInputStream(mOutputBlockingQueue);
         mThread = new Thread(this, mThreadName);
         mThread.start();
         return EPNanoHTTPD.newFixedLengthResponse(respStatus, mimeType, instream, mContentSize, headers);
@@ -548,4 +565,7 @@ class EPProxyThread implements Runnable {
     }
   }
 
+  public static class DeadBlockingQueueException extends Exception {
+
+  }
 }

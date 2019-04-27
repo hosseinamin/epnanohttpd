@@ -75,7 +75,7 @@ public class BlockingInputStream extends InputStream {
     }
     return ((int)mInQueue[mInQueueOff++]) & 0xFF; // unsgined value
   }
-  /*  
+  
   @Override
   public int read (byte[] b) throws IOException {
     return read(b, 0, b.length);
@@ -131,5 +131,5 @@ public class BlockingInputStream extends InputStream {
     }
     mInQueueOff = 0;
   }
-  */
+  
 }

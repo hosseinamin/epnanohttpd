@@ -138,6 +138,10 @@ class EPProxyThread implements Runnable {
             try {
               fileInStream = new FileInputStream(new File(mCacheDir, chunk.filename));
               fileInStream.skip(start - chunk.start);
+              // The code relies on the given end value in CacheMD
+              // Instead of checking the file size, file size may not be equal
+              //  to start/end values
+              end = Math.min(chunk.end, end);
               byte []buffer = new byte[BUFFSIZE];
               int size;
               while ((size = fileInStream.read(buffer)) > 0) {

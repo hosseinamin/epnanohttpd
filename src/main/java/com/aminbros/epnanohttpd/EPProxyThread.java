@@ -373,9 +373,10 @@ class EPProxyThread implements Runnable {
         hasall = (range[0] > range[1]);
         if (hasall && revalidate && !mCacheMD.mustRevalidate) {
           revalidate = false;
-        } else if (!hasall && !revalidate) {
-          revalidate = true;
         }
+        /* else if (!hasall && !revalidate) {
+          revalidate = true;
+        } */
       }
       // check for network connectivity, for skipping revalidation
       if (revalidate && hasall) {

@@ -105,7 +105,6 @@ class EPProxyThread implements Runnable {
       mFileSize - 1 : mRange[1];
     FileOutputStream fileOutStream = null;
     Chunk chunk = null;
-    long writesize = 0;
     try {
       HttpURLConnection conn = mActiveConn;
       mActiveConn = null;
@@ -147,9 +146,8 @@ class EPProxyThread implements Runnable {
               while ((size = fileInStream.read(buffer)) > 0) {
                 size = Math.min(size, (int)(end - start + 1));
                 byte[] data = Arrays.copyOfRange(buffer, 0, size);
-                addToOutputQueue(data);
                 start += size;
-                writesize += size;
+                addToOutputQueue(data);
                 if (start > end) {
                   break; // done
                 }
@@ -161,7 +159,6 @@ class EPProxyThread implements Runnable {
               if (Thread.interrupted()) {
                 throw new InterruptedException();
               }
-              continue; // go for remaining chunks
             } catch (IOException e) {
               if (fileInStream != null) {
                 try {
@@ -171,21 +168,12 @@ class EPProxyThread implements Runnable {
                 }
               }
               Log.w(TAG, "Cache chunk read IOExc", e);
-              // fallback to http request
-              if (start <= end) {
-                conn = EPProxyThread.httprequest(mMethod, mUrl, mHeaders, mInStream, start, end);
-                if (conn == null || conn.getResponseCode() != 206) {
-                  // range request failed
-                  Log.w(TAG, "pipe thread http range request failed: " +
-                        (conn != null ?
-                         "[" +String.valueOf(conn.getResponseCode()) + "] " +
-                         conn.getResponseMessage() : "[null]"));
-                  return;
-                }
-              } else {
-                break;
-              }
+              // hit reset
+              (new File(mCacheDir, chunk.filename)).delete();
+              mCacheMD.removeChunk(chunk);
+              CacheMDManager.saveCacheMD(mCacheDir, mCacheMD);
             }
+            continue; // go for remaining chunks
           }
         }
         chunk = null;
@@ -227,9 +215,8 @@ class EPProxyThread implements Runnable {
             fileOutStream.write(buffer, 0, size);
           }
           byte[] data = Arrays.copyOfRange(buffer, 0, size);
-          addToOutputQueue(data);
           start += size;
-          writesize += size;
+          addToOutputQueue(data);
           if (start > end) {
             break; // done
           }

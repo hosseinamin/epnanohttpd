@@ -51,28 +51,31 @@ public class BlockingInputStream extends InputStream {
   }
   
   public int read () throws IOException {
-    if (mBlockingQueue == null) {
-      return -1;
-    }
     if (mInQueue == null || mInQueueOff >= mInQueue.length) {
+      if (mClosed) {
+        throw new IOException("stream has closed");
+      }
+      if (mBlockingQueue == null) {
+        return -1;
+      }
       try {
         mInQueue = mBlockingQueue.take();
       } catch (InterruptedException e) {
         throw new IOException(e);
       }
       mInQueueOff = 0;
-    }
-    if (mInQueue.length == 0) {
-      if (mBlockingQueue instanceof IPipeStatus) {
-        ((IPipeStatus)mBlockingQueue).setListening(false);
+      if (mInQueue.length == 0) {
+        if (mBlockingQueue instanceof IPipeStatus) {
+          ((IPipeStatus)mBlockingQueue).setListening(false);
+        }
+        mBlockingQueue = null;
+        mInQueue = null;
+        return -1;
       }
-      mBlockingQueue = null;
-      mInQueue = null;
-      return -1;
     }
-    return (int)mInQueue[mInQueueOff++];
+    return ((int)mInQueue[mInQueueOff++]) & 0xFF; // unsgined value
   }
-  
+  /*  
   @Override
   public int read (byte[] b) throws IOException {
     return read(b, 0, b.length);
@@ -128,5 +131,5 @@ public class BlockingInputStream extends InputStream {
     }
     mInQueueOff = 0;
   }
-  
+  */
 }

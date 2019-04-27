@@ -120,7 +120,7 @@ class EPProxyThread implements Runnable {
             chunk = mCacheMD.getOptimalChunkForRange(start, end);
           }
           if (chunk == null || chunk.start > start || chunk.active) {
-            if (chunk != null) {
+            if (chunk != null && chunk.start > 0 && chunk.start > start) {
               end = Math.min(chunk.start - 1, end);
             }
             conn = EPProxyThread.httprequest(mMethod, mUrl, mHeaders, mInStream, start, end);

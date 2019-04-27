@@ -31,6 +31,7 @@ import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.util.UUID;
 
 import java.net.URL;
 import java.net.HttpURLConnection;
@@ -183,10 +184,12 @@ class EPProxyThread implements Runnable {
             }
           }
         }
-        chunk = mCacheMD == null ? null : mCacheMD.getChunkAt(start);
-        if (mCacheMD != null && chunk == null) {
+        chunk = null;
+        // chunk = mCacheMD == null ? null : mCacheMD.getChunkAt(start);
+        if (mCacheMD != null) {
           // start caching
-          String filename = "part_" + String.valueOf(start);
+          String filename = "part_" + UUID.randomUUID().toString();
+            // String.valueOf(start);
           try {
             if (!mCacheDir.exists()) {
               if (!mCacheDir.mkdirs()) {

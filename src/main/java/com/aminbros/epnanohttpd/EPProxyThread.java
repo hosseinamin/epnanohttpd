@@ -15,7 +15,6 @@ import java.nio.charset.StandardCharsets;
 import java.util.regex.Pattern;
 import java.util.regex.Matcher;
 import java.util.Date;
-import java.util.concurrent.ArrayBlockingQueue;
 import java.util.Arrays;
 
 import fi.iki.elonen.NanoHTTPD;
@@ -39,6 +38,7 @@ import java.net.InetAddress;
 
 import com.aminbros.util.Log;
 import com.aminbros.util.BlockingInputStream;
+import com.aminbros.util.PipeBlockingQueue;
 
 import com.aminbros.epnanohttpd.CacheMD.Chunk;
 
@@ -55,7 +55,7 @@ class EPProxyThread implements Runnable {
   protected URL mUrl;
   protected Map<String, String> mHeaders;
   protected File mCacheDir;
-  protected ArrayBlockingQueue mOutputBlockingQueue;
+  protected PipeBlockingQueue mOutputBlockingQueue;
   protected HttpURLConnection mActiveConn;
   protected long []mRange;
   protected long mContentSize;
@@ -132,27 +132,6 @@ class EPProxyThread implements Runnable {
                      conn.getResponseMessage() : "[null]"));
               return;
             }
-            chunk = mCacheMD == null ? null : mCacheMD.getChunkAt(start);
-            if (mCacheMD != null && chunk == null) {
-              // start caching
-              String filename = "part_" + String.valueOf(start);
-              try {
-                if (!mCacheDir.exists()) {
-                  if (!mCacheDir.mkdirs()) {
-                    throw new IOException("Could not create cachedir directory at " + mCacheDir.getAbsolutePath());
-                  }
-                }
-                fileOutStream = new FileOutputStream(new File(mCacheDir, filename));
-              } catch (IOException e) {
-                Log.w(TAG, "Cache chunk save IOExc", e);
-              }
-              chunk = new Chunk();
-              chunk.start = start;
-              chunk.end = end;
-              chunk.filename = filename;
-              chunk.active = true;
-              mCacheMD.addChunk(chunk);
-            }
           } else {
             FileInputStream fileInStream = null;
             try {
@@ -204,6 +183,27 @@ class EPProxyThread implements Runnable {
             }
           }
         }
+        chunk = mCacheMD == null ? null : mCacheMD.getChunkAt(start);
+        if (mCacheMD != null && chunk == null) {
+          // start caching
+          String filename = "part_" + String.valueOf(start);
+          try {
+            if (!mCacheDir.exists()) {
+              if (!mCacheDir.mkdirs()) {
+                throw new IOException("Could not create cachedir directory at " + mCacheDir.getAbsolutePath());
+              }
+            }
+            fileOutStream = new FileOutputStream(new File(mCacheDir, filename));
+          } catch (IOException e) {
+            Log.w(TAG, "Cache chunk save IOExc", e);
+          }
+          chunk = new Chunk();
+          chunk.start = start;
+          chunk.end = end;
+          chunk.filename = filename;
+          chunk.active = true;
+          mCacheMD.addChunk(chunk);
+        }
         if (conn.getResponseCode() >= 400) {
           Log.w(TAG, "pipe thread http unexpected result: [" +
                 String.valueOf(conn.getResponseCode()) + "] " +
@@ -235,13 +235,14 @@ class EPProxyThread implements Runnable {
         }
         if (chunk != null) {
           chunk.active = false;
+          chunk = null;
           CacheMDManager.saveCacheMD(mCacheDir, mCacheMD);
         }
         conn = null;
       }
-    } catch (DeadBlockingQueueException e) {
+    } catch (DeadBlockingStreamException e) {
       // thread interrupted
-      Log.w(TAG, "Output connection timeout, DeadBlockingQueueException");
+      Log.w(TAG, "Output connection timeout, DeadBlockingStreamException");
     } catch (InterruptedException e) {
       // thread interrupted
       Log.w(TAG, "InterruptedExc at pipe thread", e);
@@ -260,11 +261,11 @@ class EPProxyThread implements Runnable {
       if (chunk != null && chunk.active) {
         if (chunk.start < start - 1) {
           chunk.end = start - 1;
-          chunk.active = false;
         } else {
           (new File(mCacheDir, chunk.filename)).delete();
           mCacheMD.removeChunk(chunk);
         }
+        chunk.active = false;
       }
       if (mCacheMD != null) {
         cmanager.unsubscribe(mCacheMD, this);
@@ -278,12 +279,11 @@ class EPProxyThread implements Runnable {
     }
   }
 
-  public void addToOutputQueue (byte[] data) throws DeadBlockingQueueException, InterruptedException {
-    long waitingTime = new Date().getTime();
+  public void addToOutputQueue (byte[] data) throws DeadBlockingStreamException, InterruptedException {
     while (mOutputBlockingQueue.remainingCapacity() == 0) {
       Thread.sleep(100);
-      if (new Date().getTime() > waitingTime + DEAD_QUEUE_TIMEOUT) {
-        throw new DeadBlockingQueueException();
+      if (!mOutputBlockingQueue.isListening()) {
+        throw new DeadBlockingStreamException();
       }
     }
     mOutputBlockingQueue.put(data);
@@ -394,6 +394,7 @@ class EPProxyThread implements Runnable {
           }
         }
       }
+      Log.d(TAG, "on-request for range: " + (mRange != null ? mRange[0] + "-" + mRange[1] : "null") + ", hasall: " + hasall + ", revalidate: " + revalidate);
       if (mCacheMD != null && revalidate) {
         mActiveConn = httprequesthead(mUrl, mHeaders);
         allHeaders = mActiveConn.getHeaderFields(); 
@@ -510,7 +511,7 @@ class EPProxyThread implements Runnable {
         if (!keepActiveConn) {
           mActiveConn = null;
         }
-        mOutputBlockingQueue = new ArrayBlockingQueue(50);
+        mOutputBlockingQueue = new PipeBlockingQueue(100);
         BlockingInputStream instream = new BlockingInputStream(mOutputBlockingQueue);
         mThread = new Thread(this, mThreadName);
         mThread.start();
@@ -565,7 +566,7 @@ class EPProxyThread implements Runnable {
     }
   }
 
-  public static class DeadBlockingQueueException extends Exception {
+  public static class DeadBlockingStreamException extends Exception {
 
   }
 }

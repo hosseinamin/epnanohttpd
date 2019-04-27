@@ -16,8 +16,19 @@ public class BlockingInputStream extends InputStream {
     super();
     mClosed = false;
     mBlockingQueue = blockingQueue;
+    if (mBlockingQueue instanceof IPipeStatus) {
+      ((IPipeStatus)mBlockingQueue).setListening(true);
+    }
     mInQueue = null;
     mInQueueOff = 0;
+  }
+
+  @Override
+  protected void finalize() throws Throwable {
+    super.finalize();
+    if (mBlockingQueue != null && mBlockingQueue instanceof IPipeStatus) {
+      ((IPipeStatus)mBlockingQueue).setListening(false);
+    }
   }
   
   @Override
@@ -40,6 +51,9 @@ public class BlockingInputStream extends InputStream {
   }
   
   public int read () throws IOException {
+    if (mBlockingQueue == null) {
+      return -1;
+    }
     if (mInQueue == null || mInQueueOff >= mInQueue.length) {
       try {
         mInQueue = mBlockingQueue.take();
@@ -47,6 +61,14 @@ public class BlockingInputStream extends InputStream {
         throw new IOException(e);
       }
       mInQueueOff = 0;
+    }
+    if (mInQueue.length == 0) {
+      if (mBlockingQueue instanceof IPipeStatus) {
+        ((IPipeStatus)mBlockingQueue).setListening(false);
+      }
+      mBlockingQueue = null;
+      mInQueue = null;
+      return -1;
     }
     return (int)mInQueue[mInQueueOff++];
   }
@@ -77,6 +99,9 @@ public class BlockingInputStream extends InputStream {
       }
       byte[] data = mBlockingQueue.take();
       if (data.length == 0) {
+        if (mBlockingQueue instanceof IPipeStatus) {
+          ((IPipeStatus)mBlockingQueue).setListening(false);
+        }
         mBlockingQueue = null;
         return 0;
       }
@@ -92,7 +117,6 @@ public class BlockingInputStream extends InputStream {
       throw new IOException(e);
     }
   }
-
   protected void setInQueue (byte[] b, int off, int len) {
     if (len > 0) {
       mInQueue = new byte[len];
